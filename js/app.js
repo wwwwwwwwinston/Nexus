@@ -1199,6 +1199,9 @@ function downloadText(text, filename, mime) {
 }
 
 function setupScenarios() {
+  // The Scenarios tab was removed from the UI; the engine still ships for the
+  // standalone CLI (score.mjs). Bail if the panel isn't present.
+  if (!document.getElementById("panel-scenarios")) return;
   // scenario radios
   document.querySelectorAll('input[name="scenario"]').forEach((r) => {
     r.addEventListener("change", (e) => {
@@ -1464,8 +1467,6 @@ window.addEventListener("DOMContentLoaded", () => {
   setupImport();
   setupControls();
   setupPresolve();
-  setupScenarios();
-  setupBatch();
   setupKeyboardNav();
   loadCsvText(DEFAULT_CSV, "Sample dataset (embedded)");
 });

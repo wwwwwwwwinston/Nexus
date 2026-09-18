@@ -96,7 +96,17 @@
         </div>
 
         <div id="presolve-summary" class="summary-grid"></div>
+        <h3 class="section-h">Demand vs capacity</h3>
         <div id="presolve-host" class="table-host"></div>
+
+        <h3 class="section-h">Predecessor ordering (§2.4 rule 3)</h3>
+        <p class="hint small">
+          Checks the loaded schedule result against the <code>predecessor_activity_id</code>
+          column: each predecessor's <em>last</em> granted week must come before its
+          successor's <em>first</em> granted week.
+        </p>
+        <div id="precedence-banner" class="precedence-banner"></div>
+        <div id="precedence-host" class="table-host"></div>
       </section>
 
       <!-- IMPORT -->

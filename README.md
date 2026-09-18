@@ -20,7 +20,11 @@ and shows:
   a solve, which locations are chokepoints — where total contracted demand
   exceeds what weekly capacity can deliver over the horizon. Overloaded
   locations (e.g. the H01↔H02 single-track sectors) are flagged, showing
-  exactly how many accesses structurally cannot fit.
+  exactly how many accesses structurally cannot fit. This tab **also verifies
+  predecessor ordering** (Problem Statement §2.4 rule 3): it reads the
+  `predecessor_activity_id` column and checks the loaded schedule result so
+  that each predecessor's *last* granted week comes before its successor's
+  *first* granted week, flagging any violation.
 - **Import data** — drop a CSV, pick a file, or paste CSV text to load a
   different solve result. Everything runs locally in the browser; nothing
   is uploaded.

@@ -15,9 +15,12 @@
           <p class="tagline">nightly track-possession schedule viewer</p>
         </div>
       </div>
-      <div class="dataset-chip">
-        <span class="chip-label">Dataset</span>
-        <span id="dataset-name">—</span>
+      <div class="topbar-right">
+        <div class="dataset-chip">
+          <span class="chip-label">Dataset</span>
+          <span id="dataset-name">—</span>
+        </div>
+        <button id="theme-toggle" class="theme-toggle" title="Toggle light / dark theme" aria-label="Toggle theme">🌙</button>
       </div>
     </header>
 
@@ -27,6 +30,7 @@
       <button class="tab" data-target="panel-contracts">Contracts</button>
       <button class="tab" data-target="panel-presolve">Pre-solve</button>
       <button class="tab" data-target="panel-scenarios">Scenarios A/B/C</button>
+      <button class="tab" data-target="panel-batch">Batch</button>
       <button class="tab" data-target="panel-import">Import data</button>
     </nav>
 
@@ -113,19 +117,11 @@
       <!-- SCENARIOS -->
       <section id="panel-scenarios" class="panel hidden">
         <p class="hint">
-          Validate and score a submission under <strong>Scenario A</strong> (strict supply,
-          flexible schedule), <strong>B</strong> (strict schedule, flexible supply), or
-          <strong>C</strong> (balanced). Load <code>SCHEDULE_ACCESS.csv</code> (per-access
-          placement with the <code>eclo</code> flag) plus the input files. The engine reports
-          hard-fail tags (<code>capacity</code> / <code>eclo</code> / <code>planned_date</code>)
-          and the soft-score breakdown.
+          Validate and score a submission under <strong>Scenario A</strong> (strict supply),
+          <strong>B</strong> (strict schedule), or <strong>C</strong> (balanced). Load
+          <code>SCHEDULE_ACCESS.csv</code> (per-access placement with the <code>eclo</code>
+          flag) plus the input files.
         </p>
-
-        <div class="scenario-picker">
-          <label class="sc-radio"><input type="radio" name="scenario" value="A" checked /> <b>A</b> · strict supply</label>
-          <label class="sc-radio"><input type="radio" name="scenario" value="B" /> <b>B</b> · strict schedule</label>
-          <label class="sc-radio"><input type="radio" name="scenario" value="C" /> <b>C</b> · balanced</label>
-        </div>
 
         <div class="presolve-controls">
           <label class="drop-mini" id="drop-access">
@@ -140,21 +136,99 @@
           </label>
           <button id="load-scenario-sample" class="btn ghost small">Load sample submission</button>
         </div>
-        <p class="hint small">
-          Scenarios reuse the activity file (for location + activity priority) and supply file
-          from the <b>Pre-solve</b> tab, and the schedule-result from <b>Import</b> (for planned
-          weeks). Load those there, or click <b>Load sample submission</b> to populate everything.
+
+        <!-- structural input validation -->
+        <div id="scenario-validation" class="validation-box"></div>
+
+        <!-- column-mapping (appears when a file has unrecognised headers) -->
+        <div id="column-mapping" class="colmap-box"></div>
+
+        <!-- sub-view nav -->
+        <div class="subnav" id="scenario-subnav">
+          <button class="subtab active" data-sub="single">Single</button>
+          <button class="subtab" data-sub="compare">Compare A/B/C</button>
+          <button class="subtab" data-sub="charts">Charts</button>
+          <button class="subtab" data-sub="whatif">What-if</button>
+        </div>
+
+        <!-- SINGLE -->
+        <div id="sub-single" class="subview">
+          <div class="scenario-picker">
+            <label class="sc-radio"><input type="radio" name="scenario" value="A" checked /> <b>A</b> · strict supply</label>
+            <label class="sc-radio"><input type="radio" name="scenario" value="B" /> <b>B</b> · strict schedule</label>
+            <label class="sc-radio"><input type="radio" name="scenario" value="C" /> <b>C</b> · balanced</label>
+            <span class="picker-spacer"></span>
+            <button id="export-report-json" class="btn ghost small">⬇ JSON</button>
+            <button id="export-report-csv" class="btn ghost small">⬇ CSV</button>
+          </div>
+
+          <div id="scenario-verdict" class="scenario-verdict"></div>
+          <div id="scenario-score" class="summary-grid"></div>
+
+          <h3 class="section-h">Line mapping (Alpha / Beta) — used by Scenario C's ECLO window</h3>
+          <p class="hint small">Assign each location to a line. C requires all ECLO nights on a line to fit one continuous ≤2-week span. Defaults are inferred from location names; edit if wrong.</p>
+          <div id="line-mapping" class="line-mapping"></div>
+
+          <h3 class="section-h">Findings <span class="hint small">— click a tag in the verdict to jump to detail</span></h3>
+          <div id="scenario-findings" class="table-host"></div>
+        </div>
+
+        <!-- COMPARE -->
+        <div id="sub-compare" class="subview hidden">
+          <p class="hint small">All three scenarios scored against the same loaded submission.</p>
+          <div id="compare-host" class="compare-grid"></div>
+        </div>
+
+        <!-- CHARTS -->
+        <div id="sub-charts" class="subview hidden">
+          <h3 class="section-h">Capacity heatmap — accesses per location-week</h3>
+          <p class="hint small">Cells over the location's supply capacity are highlighted. Hover for detail.</p>
+          <div id="chart-heatmap" class="chart-host"></div>
+          <h3 class="section-h">ECLO nights per line</h3>
+          <div id="chart-eclo" class="chart-host"></div>
+          <h3 class="section-h">Score contribution (current scenario)</h3>
+          <div id="chart-score" class="chart-host"></div>
+        </div>
+
+        <!-- WHAT-IF -->
+        <div id="sub-whatif" class="subview hidden">
+          <p class="hint small">
+            Move an access to a different week and watch the score / hard-fails update live.
+            Changes are in-memory only; use <b>Reset</b> to restore the loaded submission.
+          </p>
+          <div class="whatif-controls">
+            <select id="whatif-activity"></select>
+            <select id="whatif-which">
+              <option value="last">last access</option>
+              <option value="first">first access</option>
+            </select>
+            <span id="whatif-current" class="mono"></span>
+            <label>→ week <input type="number" id="whatif-week" min="0" style="width:80px" /></label>
+            <button id="whatif-apply" class="btn small">Move</button>
+            <button id="whatif-reset" class="btn ghost small">Reset all</button>
+          </div>
+          <div id="whatif-delta" class="whatif-delta"></div>
+          <div id="whatif-verdict" class="scenario-verdict"></div>
+        </div>
+      </section>
+
+      <!-- BATCH -->
+      <section id="panel-batch" class="panel hidden">
+        <p class="hint">
+          Score <strong>multiple</strong> <code>SCHEDULE_ACCESS.csv</code> submissions at once
+          against all three scenarios and rank them. Uses the input files loaded on the
+          <b>Scenarios</b> / <b>Pre-solve</b> tabs (activity, supply, projects, schedule-result).
         </p>
-
-        <div id="scenario-verdict" class="scenario-verdict"></div>
-        <div id="scenario-score" class="summary-grid"></div>
-
-        <h3 class="section-h">Line mapping (Alpha / Beta) — used by Scenario C's ECLO window</h3>
-        <p class="hint small">Assign each location to a line. C requires all ECLO nights on a line to fit one continuous ≤2-week span. Defaults are inferred from location names; edit if wrong.</p>
-        <div id="line-mapping" class="line-mapping"></div>
-
-        <h3 class="section-h">Findings</h3>
-        <div id="scenario-findings" class="table-host"></div>
+        <div class="presolve-controls">
+          <label class="drop-mini" id="drop-batch">
+            <input type="file" id="input-batch" accept=".csv,text/csv" multiple hidden />
+            <span class="dm-title">Drop one or more SCHEDULE_ACCESS.csv</span>
+            <span class="dm-state" id="state-batch">none loaded</span>
+          </label>
+          <button id="batch-clear" class="btn ghost small">Clear</button>
+          <button id="batch-export" class="btn ghost small">⬇ Export leaderboard CSV</button>
+        </div>
+        <div id="batch-host" class="table-host"></div>
       </section>
 
       <!-- IMPORT -->

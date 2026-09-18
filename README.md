@@ -28,7 +28,19 @@ and shows:
 - **Scenarios A/B/C** — validate and score a submission under any of the three
   scoring regimes (see below). Load `SCHEDULE_ACCESS.csv` (per-access placement
   with the `eclo` flag) plus the input files; the engine reports hard-fail tags
-  (`capacity` / `eclo` / `planned_date`) and the soft-score breakdown.
+  (`capacity` / `eclo` / `planned_date`) and the soft-score breakdown. Four
+  sub-views:
+  - **Single** — one scenario in depth: verdict, score cards, findings, and
+    clickable hard-fail tags that jump to the offending detail. Export the full
+    A/B/C report as **JSON or CSV**.
+  - **Compare A/B/C** — all three verdicts + scores side by side for the same
+    submission.
+  - **Charts** — a capacity heatmap (accesses per location-week, over-capacity
+    cells flagged), ECLO nights per line, and a score-contribution bar.
+  - **What-if** — move an access to a different week and watch the score /
+    hard-fails update live against the baseline.
+- **Batch** — drop several `SCHEDULE_ACCESS.csv` submissions and get a ranked
+  leaderboard (pass/fail + score per scenario); export it as CSV.
 - **Import data** — drop a CSV, pick a file, or paste CSV text to load a
   different solve result. Everything runs locally in the browser; nothing
   is uploaded.
@@ -75,11 +87,27 @@ The app uses ES modules, so it needs to be served over HTTP (opening
 
 ```bash
 # from this directory
-python3 -m http.server 8000
+python3 -m http.server 8000   # or: npm run serve
 # then open http://localhost:8000/
 ```
 
 Any static file server works (`npx serve`, nginx, etc.).
+
+**UI shortcuts:** the ☀️/🌙 button (top-right) toggles light/dark theme
+(remembered via `localStorage`); `Alt+1…7` jump to a tab and `[` / `]` cycle
+between them.
+
+## Tests
+
+The scenario engine has a zero-dependency test suite (no `npm install` needed):
+
+```bash
+npm test          # or: node tests/scenario.test.mjs
+```
+
+It covers the cost-weight ladder, all three scenarios' hard-fails and soft
+scores, the ECLO continuity window and 2-night cap, input validation, the
+occupancy grid, and the report serializers (39 assertions).
 
 ## Data format
 
@@ -124,6 +152,9 @@ data/
     07_PROJECT_DETAILS.csv   # sample contract priorities + planned weeks
     08_ACTIVITY_DETAILS.csv  # sample demand data (with predecessors)
     SCHEDULE_ACCESS.csv      # sample per-access submission (with ECLO nights)
+tests/
+  scenario.test.mjs         # zero-dependency test suite for the scenario engine
+package.json                # npm test / npm run serve scripts (no dependencies)
 ```
 
 ## Pre-solve input format

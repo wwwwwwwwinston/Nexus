@@ -1,0 +1,12 @@
+{
+  "name": "trackopt-viewer",
+  "version": "1.0.0",
+  "description": "Offline web UI for viewing, testing, and scoring trackopt track-possession schedules (Scenarios A/B/C).",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node tests/scenario.test.mjs",
+    "serve": "python3 -m http.server 8000"
+  },
+  "license": "MIT"
+}

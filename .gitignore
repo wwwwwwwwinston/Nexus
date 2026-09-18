@@ -1,0 +1,7 @@
+# Verification / tooling artifacts
+.kiro/artifacts/
+*.log
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db

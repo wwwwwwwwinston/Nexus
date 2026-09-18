@@ -80,7 +80,36 @@ the UI** (defaults are inferred from location names — correct them if wrong).
 > The actual scheduling is done by the `trackopt` CP-SAT solver, which is a
 > separate project.
 
-## Run it
+### Score from the command line (no browser)
+
+The same A/B/C scoring engine runs standalone via `score.mjs` — point it at your
+CSVs and it prints the verdict (hard-fail tags) and soft score for each scenario.
+No browser, no tab, no dependencies.
+
+```bash
+node score.mjs \
+  --access    data/sample_inputs/SCHEDULE_ACCESS.csv \
+  --activities data/sample_inputs/08_ACTIVITY_DETAILS.csv \
+  --supply    data/sample_inputs/04_LOCATION_SUPPLY.csv \
+  --projects  data/sample_inputs/07_PROJECT_DETAILS.csv \
+  --result    data/schedule_result.csv \
+  --scenario  all        # or A | B | C
+# add --json for machine-readable output, --quiet to suppress the text report
+```
+
+Only `--access` is required; the other files add capacity checks (`--supply`),
+locations & activity priority (`--activities`), contract priority & planned week
+(`--projects` / `--result`). Provide a `--lines location,line` CSV to override the
+Alpha/Beta mapping used by Scenario C's ECLO window.
+
+**Exit code** (useful for CI / scripting): `0` if every scored scenario is
+feasible, `1` if any scored scenario hard-fails or the input is structurally
+broken, `2` on a usage error (missing file / bad option). With `--scenario all`
+it fails if *any* of A/B/C hard-fails.
+
+Run `node score.mjs --help` for the full option list.
+
+## Run it (web UI)
 
 The app uses ES modules, so it needs to be served over HTTP (opening
 `index.html` directly via `file://` will not work in most browsers).
@@ -154,7 +183,8 @@ data/
     SCHEDULE_ACCESS.csv      # sample per-access submission (with ECLO nights)
 tests/
   scenario.test.mjs         # zero-dependency test suite for the scenario engine
-package.json                # npm test / npm run serve scripts (no dependencies)
+score.mjs                   # standalone CLI: score a submission through A/B/C
+package.json                # npm test / npm run serve / npm run score (no deps)
 ```
 
 ## Pre-solve input format

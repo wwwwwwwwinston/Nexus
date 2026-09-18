@@ -153,6 +153,26 @@ const csv = reportToCsv(all, "sub1");
 check("reportToCsv has 3 data rows", csv.trim().split("\n").length === 4); // header + 3
 check("reportToCsv contains PASS/FAIL", /FAIL|PASS/.test(csv));
 
+// ---------- CLI-style: access-only (no supply/activities/projects) ----------
+// Mirrors `node score.mjs --access ... --scenario all` with nothing else:
+// engine must not crash and must degrade gracefully.
+const { rows: accessOnly } = parseScheduleAccess(`activity_id,access_seq,week,eclo,access_night
+P1,1,3,0,1
+P1,2,4,1,1`);
+const emptyMeta = buildMeta({ activityRows: [], projectRows: [], scheduleRows: [] });
+for (const scn of SCENARIOS) {
+  const r = evaluateScenario(accessOnly, [], emptyMeta, { scenario: scn, lineOf: inferLine });
+  check(`access-only ${scn} does not throw & returns score`, typeof r.score === "number");
+}
+// With no supply, there can be no capacity excess.
+const rAonly = evaluateScenario(accessOnly, [], emptyMeta, { scenario: "A", lineOf: inferLine });
+check("access-only A: no capacity tag (no supply data)", !rAonly.tags.has("capacity"));
+check("access-only A: eclo tag present (1 ECLO night)", rAonly.tags.has("eclo"));
+
+// evaluateAllScenarios shape via CLI-style call
+const allCli = evaluateAllScenarios(accessOnly, [], emptyMeta, { lineOf: inferLine });
+check("CLI all: A/B/C all present", SCENARIOS.every((s) => allCli[s] && typeof allCli[s].score === "number"));
+
 // ---------- summary ----------
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) { console.log("Failed: " + failures.join("; ")); process.exit(1); }

@@ -10,9 +10,16 @@ import {
   classifyInput,
   parseSupply,
   parseActivities,
+  parseProjects,
   computeDemandVsCapacity,
   checkPrecedence,
 } from "./inputs.js";
+import {
+  parseScheduleAccess,
+  evaluateScenario,
+  buildMeta,
+  inferLine,
+} from "./scenario.js";
 
 // ---- App state ----
 const state = {
@@ -27,6 +34,11 @@ const state = {
   supplyRows: null, // [{location, capacity}]
   activityInputRows: null, // [{activity, contract, location, accesses, priority}]
   horizonWeeks: 30,
+  // Scenario state
+  scenario: "A",
+  accessRows: null, // parsed SCHEDULE_ACCESS.csv
+  projectRows: null, // parsed 07_PROJECT_DETAILS.csv
+  lineMap: {}, // location -> "Alpha" | "Beta"
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -706,11 +718,253 @@ function setupPresolve() {
   renderPresolve();
 }
 
+// ---- Scenarios (A/B/C validator + scorer) ----
+
+// Build/refresh the location -> line map, keeping any user overrides.
+function ensureLineMap() {
+  const locs = new Set();
+  for (const a of state.activityInputRows || []) if (a.location) locs.add(a.location);
+  for (const s of state.supplyRows || []) if (s.location) locs.add(s.location);
+  for (const loc of locs) {
+    if (!state.lineMap[loc]) {
+      const inf = inferLine(loc);
+      state.lineMap[loc] = inf === "?" ? "Alpha" : inf;
+    }
+  }
+}
+
+function renderLineMapping() {
+  const host = $("#line-mapping");
+  if (!host) return;
+  host.innerHTML = "";
+  const locs = Object.keys(state.lineMap).sort();
+  if (locs.length === 0) {
+    host.appendChild(el("div", { class: "empty" }, "Load the activity/supply files to populate locations."));
+    return;
+  }
+  for (const loc of locs) {
+    const row = el("label", { class: "lm-row" }, [
+      el("span", { class: "mono lm-loc" }, loc),
+      (() => {
+        const sel = el("select", {
+          onchange: (e) => {
+            state.lineMap[loc] = e.target.value;
+            renderScenario();
+          },
+        }, [
+          el("option", { value: "Alpha" }, "Alpha"),
+          el("option", { value: "Beta" }, "Beta"),
+        ]);
+        sel.value = state.lineMap[loc];
+        return sel;
+      })(),
+    ]);
+    host.appendChild(row);
+  }
+}
+
+function renderScenario() {
+  const verdict = $("#scenario-verdict");
+  const scoreHost = $("#scenario-score");
+  const findHost = $("#scenario-findings");
+  if (!verdict) return;
+  verdict.className = "scenario-verdict";
+  verdict.innerHTML = "";
+  scoreHost.innerHTML = "";
+  findHost.innerHTML = "";
+
+  if (!state.accessRows) {
+    verdict.classList.add("na");
+    verdict.textContent = "Load SCHEDULE_ACCESS.csv (and the input files) to validate a submission.";
+    return;
+  }
+
+  ensureLineMap();
+  const meta = buildMeta({
+    activityRows: state.activityInputRows || [],
+    projectRows: state.projectRows || [],
+    scheduleRows: state.rows || [],
+  });
+  const supply = state.supplyRows || [];
+  const result = evaluateScenario(state.accessRows, supply, meta, {
+    scenario: state.scenario,
+    lineOf: (loc) => state.lineMap[loc] || inferLine(loc),
+  });
+
+  // Verdict banner
+  if (result.hardFail) {
+    verdict.classList.add("bad");
+    verdict.appendChild(el("div", { class: "verdict-head" },
+      `✗ Scenario ${state.scenario}: HARD FAIL`));
+    verdict.appendChild(el("div", { class: "verdict-tags" },
+      [...result.tags].map((t) => el("span", { class: "pill shortfall tag" }, t))));
+  } else {
+    verdict.classList.add("good");
+    verdict.appendChild(el("div", { class: "verdict-head" },
+      `✓ Scenario ${state.scenario}: FEASIBLE`));
+    verdict.appendChild(el("div", { class: "verdict-sub" },
+      `Soft score: ${result.score.toLocaleString()} (lower is better)`));
+  }
+
+  // Score breakdown cards
+  const cards = [];
+  cards.push({ label: "Soft score", value: result.score.toLocaleString(), sub: "lower is better", tone: result.hardFail ? "shortfall" : "ok" });
+  const b = result.breakdown;
+  if (b.overrunScore != null)
+    cards.push({ label: "Priority-weighted overrun", value: b.overrunScore.toLocaleString(), sub: `${result.overrunDetails.length} late activity(ies)` });
+  if (b.excessScore != null)
+    cards.push({ label: "Excess access-nights", value: b.excessScore.toLocaleString(), sub: `${(b.excessNightsScored ?? b.excessNights ?? 0)} night(s) × 3` });
+  if (b.ecloScore != null)
+    cards.push({ label: "ECLO penalty", value: b.ecloScore.toLocaleString(), sub: `${b.ecloNights} night(s) × 5` });
+  cards.push({ label: "ECLO nights total", value: result.ecloNightsTotal, sub: state.scenario === "A" ? "must be 0" : "used", tone: state.scenario === "A" && result.ecloNightsTotal > 0 ? "shortfall" : "" });
+
+  for (const c of cards) {
+    scoreHost.appendChild(el("div", { class: "card " + (c.tone || "") }, [
+      el("div", { class: "card-label" }, c.label),
+      el("div", { class: "card-value" }, String(c.value)),
+      el("div", { class: "card-sub" }, c.sub),
+    ]));
+  }
+
+  // Findings + detail tables
+  if (result.findings.length === 0) {
+    findHost.appendChild(el("div", { class: "empty" }, "No hard-fail findings for this scenario."));
+  } else {
+    const ul = el("ul", { class: "findings-list" });
+    for (const f of result.findings) ul.appendChild(el("li", {}, f));
+    findHost.appendChild(ul);
+  }
+
+  // Capacity detail
+  if (result.capacityDetails.length) {
+    findHost.appendChild(el("h4", { class: "detail-h" }, "Capacity — location-weeks over supply"));
+    const t = el("table", { class: "grid" });
+    t.appendChild(el("thead", {}, el("tr", {}, [
+      el("th", {}, "Location"), el("th", { class: "num" }, "Week"),
+      el("th", { class: "num" }, "Accesses"), el("th", { class: "num" }, "Capacity"),
+      el("th", { class: "num" }, "Excess"),
+    ])));
+    const tb = el("tbody");
+    for (const d of result.capacityDetails) {
+      tb.appendChild(el("tr", { class: "row-shortfall" }, [
+        el("td", { class: "mono" }, d.location),
+        el("td", { class: "num" }, String(d.week)),
+        el("td", { class: "num" }, String(d.count)),
+        el("td", { class: "num" }, String(d.capacity)),
+        el("td", { class: "num bad" }, String(d.excess)),
+      ]));
+    }
+    t.appendChild(tb);
+    findHost.appendChild(t);
+  }
+
+  // Overrun detail (scenarios A/C)
+  if (result.overrunDetails.length && (state.scenario === "A" || state.scenario === "C")) {
+    findHost.appendChild(el("h4", { class: "detail-h" }, "Overrun — priority-weighted delay cost"));
+    const t = el("table", { class: "grid" });
+    t.appendChild(el("thead", {}, el("tr", {}, [
+      el("th", {}, "Activity"), el("th", { class: "num" }, "Contract P"),
+      el("th", { class: "num" }, "Activity P"), el("th", { class: "num" }, "Overrun days"),
+      el("th", { class: "num" }, "Weight"), el("th", { class: "num" }, "Cost"),
+    ])));
+    const tb = el("tbody");
+    for (const d of result.overrunDetails.slice(0, 50)) {
+      tb.appendChild(el("tr", {}, [
+        el("td", { class: "mono" }, d.activity),
+        el("td", { class: "num" }, d.contractPriority == null ? "—" : String(d.contractPriority)),
+        el("td", { class: "num" }, d.activityPriority == null ? "—" : String(d.activityPriority)),
+        el("td", { class: "num" }, String(d.overrunDays)),
+        el("td", { class: "num" }, String(d.weight)),
+        el("td", { class: "num bad" }, d.cost.toLocaleString()),
+      ]));
+    }
+    t.appendChild(tb);
+    findHost.appendChild(t);
+  }
+
+  renderLineMapping();
+}
+
+function setupScenarios() {
+  document.querySelectorAll('input[name="scenario"]').forEach((r) => {
+    r.addEventListener("change", (e) => {
+      if (e.target.checked) {
+        state.scenario = e.target.value;
+        renderScenario();
+      }
+    });
+  });
+
+  const wireDrop = (labelId, inputId, stateId, kind) => {
+    const label = $("#" + labelId);
+    const input = $("#" + inputId);
+    const stateSpan = $("#" + stateId);
+    const handle = (file) => {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result);
+        if (kind === "access") {
+          const { rows, errors } = parseScheduleAccess(text);
+          state.accessRows = rows;
+          stateSpan.textContent = `${rows.length} accesses · ${file.name}`;
+          if (errors.length) stateSpan.textContent += ` (${errors.length} warning)`;
+        } else {
+          const { rows } = parseProjects(text);
+          state.projectRows = rows;
+          stateSpan.textContent = `${rows.length} contracts · ${file.name}`;
+        }
+        stateSpan.classList.add("loaded");
+        renderScenario();
+      };
+      reader.readAsText(file);
+    };
+    input.addEventListener("change", (e) => handle(e.target.files[0]));
+    ["dragenter", "dragover"].forEach((ev) =>
+      label.addEventListener(ev, (e) => { e.preventDefault(); label.classList.add("hover"); }));
+    ["dragleave", "drop"].forEach((ev) =>
+      label.addEventListener(ev, (e) => { e.preventDefault(); label.classList.remove("hover"); }));
+    label.addEventListener("drop", (e) => handle(e.dataTransfer.files[0]));
+  };
+  wireDrop("drop-access", "input-access", "state-access", "access");
+  wireDrop("drop-projects", "input-projects", "state-projects", "projects");
+
+  // Load full sample submission (access + projects + inputs + result).
+  $("#load-scenario-sample").addEventListener("click", async () => {
+    try {
+      const base = "data/sample_inputs/";
+      const [accessTxt, projTxt, actTxt, supTxt] = await Promise.all([
+        fetch(base + "SCHEDULE_ACCESS.csv").then((r) => r.text()),
+        fetch(base + "07_PROJECT_DETAILS.csv").then((r) => r.text()),
+        fetch(base + "08_ACTIVITY_DETAILS.csv").then((r) => r.text()),
+        fetch(base + "04_LOCATION_SUPPLY.csv").then((r) => r.text()),
+      ]);
+      state.accessRows = parseScheduleAccess(accessTxt).rows;
+      state.projectRows = parseProjects(projTxt).rows;
+      state.activityInputRows = parseActivities(actTxt).rows;
+      state.supplyRows = parseSupply(supTxt).rows;
+      $("#state-access").textContent = `${state.accessRows.length} accesses · SCHEDULE_ACCESS.csv`;
+      $("#state-access").classList.add("loaded");
+      $("#state-projects").textContent = `${state.projectRows.length} contracts · 07_PROJECT_DETAILS.csv`;
+      $("#state-projects").classList.add("loaded");
+      state.lineMap = {};
+      renderScenario();
+    } catch (err) {
+      const v = $("#scenario-verdict");
+      v.className = "scenario-verdict bad";
+      v.textContent = "Could not load sample files (are you serving over HTTP?).";
+    }
+  });
+
+  renderScenario();
+}
+
 // ---- Boot ----
 window.addEventListener("DOMContentLoaded", () => {
   setupTabs();
   setupImport();
   setupControls();
   setupPresolve();
+  setupScenarios();
   loadCsvText(DEFAULT_CSV, "Sample dataset (embedded)");
 });

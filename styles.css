@@ -251,6 +251,33 @@ textarea {
 .precedence-banner.good { background: var(--ok-dim); color: #56d364; }
 .precedence-banner.bad { background: var(--shortfall-dim); color: #ff7b72; }
 .precedence-banner.na { background: var(--panel-2); color: var(--muted); }
+
+/* Scenarios */
+.scenario-picker { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.sc-radio {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; color: var(--muted);
+}
+.sc-radio b { color: var(--text); }
+.sc-radio:has(input:checked) { border-color: var(--accent); background: rgba(76,141,255,0.08); color: var(--text); }
+.scenario-verdict { padding: 14px 16px; border-radius: 8px; margin-bottom: 16px; }
+.scenario-verdict:empty { display: none; }
+.scenario-verdict.good { background: var(--ok-dim); }
+.scenario-verdict.bad { background: var(--shortfall-dim); }
+.scenario-verdict.na { background: var(--panel-2); color: var(--muted); font-size: 13px; }
+.verdict-head { font-size: 18px; font-weight: 700; }
+.scenario-verdict.good .verdict-head { color: #56d364; }
+.scenario-verdict.bad .verdict-head { color: #ff7b72; }
+.verdict-sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.verdict-tags { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+.pill.tag { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px; }
+.line-mapping { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.lm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+.lm-loc { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.lm-row select { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: 4px 8px; font-size: 12px; }
+.findings-list { margin: 0 0 16px; padding-left: 18px; line-height: 1.7; font-size: 13px; }
+.detail-h { margin: 18px 0 8px; font-size: 13px; color: var(--muted); }
 .import-msg { margin-top: 16px; padding: 10px 14px; border-radius: 6px; font-size: 13px; min-height: 0; }
 .import-msg:empty { display: none; }
 .import-msg.ok { background: var(--ok-dim); color: #56d364; }

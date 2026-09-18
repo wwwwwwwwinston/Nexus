@@ -76,6 +76,28 @@ export function classifyInput(filename, header) {
   return "other";
 }
 
+// Parse a project-details CSV
+// -> [{contract, contractPriority, plannedWeek, deadlineWeek}]
+export function parseProjects(text) {
+  const { header, rows } = parseGenericCsv(text);
+  const conCol = pick(header, ["contract", "contract_id", "project", "project_id"]);
+  const priCol = pick(header, ["contract_priority", "priority"]);
+  const planCol = pick(header, ["planned_completion_week", "planned_completion_date", "planned_week", "planned"]);
+  const deadCol = pick(header, ["contract_completion_date_week", "contract_deadline_week", "contract_completion_date", "deadline_week", "deadline"]);
+  const out = [];
+  for (const r of rows) {
+    const contract = conCol ? r[conCol] : "";
+    if (!contract) continue;
+    out.push({
+      contract,
+      contractPriority: priCol ? toNum(r[priCol]) : null,
+      plannedWeek: planCol ? toNum(r[planCol]) : null,
+      deadlineWeek: deadCol ? toNum(r[deadCol]) : null,
+    });
+  }
+  return { rows: out, conCol, priCol, planCol };
+}
+
 // Parse a location-supply CSV -> [{location, capacity}]
 export function parseSupply(text) {
   const { header, rows } = parseGenericCsv(text);

@@ -26,6 +26,7 @@
       <button class="tab" data-target="panel-timeline">Timeline</button>
       <button class="tab" data-target="panel-contracts">Contracts</button>
       <button class="tab" data-target="panel-presolve">Pre-solve</button>
+      <button class="tab" data-target="panel-scenarios">Scenarios A/B/C</button>
       <button class="tab" data-target="panel-import">Import data</button>
     </nav>
 
@@ -107,6 +108,53 @@
         </p>
         <div id="precedence-banner" class="precedence-banner"></div>
         <div id="precedence-host" class="table-host"></div>
+      </section>
+
+      <!-- SCENARIOS -->
+      <section id="panel-scenarios" class="panel hidden">
+        <p class="hint">
+          Validate and score a submission under <strong>Scenario A</strong> (strict supply,
+          flexible schedule), <strong>B</strong> (strict schedule, flexible supply), or
+          <strong>C</strong> (balanced). Load <code>SCHEDULE_ACCESS.csv</code> (per-access
+          placement with the <code>eclo</code> flag) plus the input files. The engine reports
+          hard-fail tags (<code>capacity</code> / <code>eclo</code> / <code>planned_date</code>)
+          and the soft-score breakdown.
+        </p>
+
+        <div class="scenario-picker">
+          <label class="sc-radio"><input type="radio" name="scenario" value="A" checked /> <b>A</b> · strict supply</label>
+          <label class="sc-radio"><input type="radio" name="scenario" value="B" /> <b>B</b> · strict schedule</label>
+          <label class="sc-radio"><input type="radio" name="scenario" value="C" /> <b>C</b> · balanced</label>
+        </div>
+
+        <div class="presolve-controls">
+          <label class="drop-mini" id="drop-access">
+            <input type="file" id="input-access" accept=".csv,text/csv" hidden />
+            <span class="dm-title">SCHEDULE_ACCESS.csv</span>
+            <span class="dm-state" id="state-access">not loaded</span>
+          </label>
+          <label class="drop-mini" id="drop-projects">
+            <input type="file" id="input-projects" accept=".csv,text/csv" hidden />
+            <span class="dm-title">07_PROJECT_DETAILS.csv</span>
+            <span class="dm-state" id="state-projects">not loaded</span>
+          </label>
+          <button id="load-scenario-sample" class="btn ghost small">Load sample submission</button>
+        </div>
+        <p class="hint small">
+          Scenarios reuse the activity file (for location + activity priority) and supply file
+          from the <b>Pre-solve</b> tab, and the schedule-result from <b>Import</b> (for planned
+          weeks). Load those there, or click <b>Load sample submission</b> to populate everything.
+        </p>
+
+        <div id="scenario-verdict" class="scenario-verdict"></div>
+        <div id="scenario-score" class="summary-grid"></div>
+
+        <h3 class="section-h">Line mapping (Alpha / Beta) — used by Scenario C's ECLO window</h3>
+        <p class="hint small">Assign each location to a line. C requires all ECLO nights on a line to fit one continuous ≤2-week span. Defaults are inferred from location names; edit if wrong.</p>
+        <div id="line-mapping" class="line-mapping"></div>
+
+        <h3 class="section-h">Findings</h3>
+        <div id="scenario-findings" class="table-host"></div>
       </section>
 
       <!-- IMPORT -->

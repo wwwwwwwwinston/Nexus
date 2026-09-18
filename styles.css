@@ -244,6 +244,13 @@ textarea {
   border-radius: 6px; padding: 8px 10px; width: 100px; font-size: 14px;
 }
 .bar-wrap.wide { width: 120px; }
+.section-h { margin: 24px 0 8px; font-size: 14px; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.hint.small { margin: 0 0 12px; font-size: 12px; }
+.precedence-banner { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+.precedence-banner:empty { display: none; }
+.precedence-banner.good { background: var(--ok-dim); color: #56d364; }
+.precedence-banner.bad { background: var(--shortfall-dim); color: #ff7b72; }
+.precedence-banner.na { background: var(--panel-2); color: var(--muted); }
 .import-msg { margin-top: 16px; padding: 10px 14px; border-radius: 6px; font-size: 13px; min-height: 0; }
 .import-msg:empty { display: none; }
 .import-msg.ok { background: var(--ok-dim); color: #56d364; }

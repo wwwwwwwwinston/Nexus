@@ -90,7 +90,8 @@ export function parseSupply(text) {
   return { rows: out, locCol, capCol };
 }
 
-// Parse an activity-details CSV -> [{activity, contract, location, accesses, priority}]
+// Parse an activity-details CSV
+// -> [{activity, contract, location, accesses, priority, predecessor}]
 export function parseActivities(text) {
   const { header, rows } = parseGenericCsv(text);
   const idCol = pick(header, ["activity_id", "activity", "id"]);
@@ -98,19 +99,101 @@ export function parseActivities(text) {
   const locCol = pick(header, ["location_id", "location", "sector_id", "sector"]);
   const accCol = pick(header, ["total_accesses", "accesses", "requested_accesses", "number_of_accesses"]);
   const priCol = pick(header, ["activity_priority", "priority"]);
+  const predCol = pick(header, [
+    "predecessor_activity_id",
+    "predecessor_activity",
+    "predecessor",
+    "predecessor_id",
+    "depends_on",
+  ]);
   const out = [];
   for (const r of rows) {
     const activity = idCol ? r[idCol] : "";
     if (!activity) continue;
+    // Predecessor may be blank / "none" / "-" for activities with no dependency.
+    let predecessor = predCol ? String(r[predCol] ?? "").trim() : "";
+    if (/^(none|null|na|n\/a|-|nan)$/i.test(predecessor)) predecessor = "";
     out.push({
       activity,
       contract: conCol ? r[conCol] : "",
       location: locCol ? r[locCol] : "",
       accesses: accCol ? (toNum(r[accCol]) ?? 0) : 0,
       priority: priCol ? toNum(r[priCol]) : null,
+      predecessor,
     });
   }
-  return { rows: out, idCol, conCol, locCol, accCol };
+  return { rows: out, idCol, conCol, locCol, accCol, predCol };
+}
+
+// Verify the predecessor ordering constraint (Problem Statement §2.4 rule 3):
+// a predecessor activity's LAST granted access must come strictly before its
+// successor's FIRST granted access.
+//
+// scheduleRows: parsed schedule-result rows (have activity_id + weeks[])
+// activityRows: parsed activity-details rows (have activity + predecessor)
+// Returns { pairs, violations, satisfied, missing } where pairs is a list of
+// { successor, predecessor, predFirst, predLast, succFirst, succLast, status }.
+export function checkPrecedence(scheduleRows, activityRows) {
+  // Map activity_id -> its granted weeks from the schedule result.
+  const weeksById = new Map();
+  for (const r of scheduleRows) {
+    weeksById.set(r.activity_id, Array.isArray(r.weeks) ? r.weeks : []);
+  }
+
+  const pairs = [];
+  let violations = 0;
+  let satisfied = 0;
+  let missing = 0;
+
+  for (const a of activityRows) {
+    if (!a.predecessor) continue; // no dependency declared
+    const succWeeks = weeksById.get(a.activity);
+    const predWeeks = weeksById.get(a.predecessor);
+
+    const succHas = Array.isArray(succWeeks) && succWeeks.length > 0;
+    const predHas = Array.isArray(predWeeks) && predWeeks.length > 0;
+
+    const predFirst = predHas ? Math.min(...predWeeks) : null;
+    const predLast = predHas ? Math.max(...predWeeks) : null;
+    const succFirst = succHas ? Math.min(...succWeeks) : null;
+    const succLast = succHas ? Math.max(...succWeeks) : null;
+
+    let status;
+    if (weeksById.get(a.activity) === undefined || weeksById.get(a.predecessor) === undefined) {
+      // One of the activities isn't present in the schedule result at all.
+      status = "unknown";
+      missing++;
+    } else if (!predHas || !succHas) {
+      // If either side got no access, the ordering can't be violated on weeks.
+      // Flag as "n/a" (nothing to compare) rather than a breach.
+      status = "na";
+      satisfied++;
+    } else if (predLast < succFirst) {
+      status = "ok";
+      satisfied++;
+    } else {
+      status = "violation";
+      violations++;
+    }
+
+    pairs.push({
+      successor: a.activity,
+      predecessor: a.predecessor,
+      predFirst,
+      predLast,
+      succFirst,
+      succLast,
+      status,
+    });
+  }
+
+  pairs.sort((x, y) => {
+    const rank = { violation: 0, unknown: 1, na: 2, ok: 3 };
+    if (rank[x.status] !== rank[y.status]) return rank[x.status] - rank[y.status];
+    return x.successor.localeCompare(y.successor);
+  });
+
+  return { pairs, violations, satisfied, missing };
 }
 
 // Combine parsed supply + activity demand into a per-location feasibility view.

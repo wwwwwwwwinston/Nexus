@@ -11,6 +11,7 @@ import {
   parseSupply,
   parseActivities,
   computeDemandVsCapacity,
+  checkPrecedence,
 } from "./inputs.js";
 
 // ---- App state ----
@@ -497,6 +498,7 @@ function renderPresolve() {
       el("div", { class: "empty" },
         "Load 08_ACTIVITY_DETAILS.csv and 04_LOCATION_SUPPLY.csv above to see the demand-vs-capacity picture."),
     );
+    renderPrecedence(state.activityInputRows || []);
     return;
   }
 
@@ -569,6 +571,80 @@ function renderPresolve() {
   }
   table.appendChild(tbody);
   host.appendChild(table);
+
+  renderPrecedence(acts);
+}
+
+// Render the predecessor-ordering verification against the loaded schedule result.
+function renderPrecedence(activityRows) {
+  const host = $("#precedence-host");
+  const banner = $("#precedence-banner");
+  if (!host) return;
+  host.innerHTML = "";
+  banner.className = "precedence-banner";
+  banner.textContent = "";
+
+  const hasPredCol = activityRows.some((a) => a.predecessor);
+  if (!activityRows.length) {
+    host.appendChild(el("div", { class: "empty" },
+      "Load 08_ACTIVITY_DETAILS.csv above to check predecessor ordering."));
+    return;
+  }
+  if (!hasPredCol) {
+    banner.classList.add("na");
+    banner.textContent =
+      "No predecessor_activity_id values found in the loaded activity file — nothing to check.";
+    return;
+  }
+
+  const { pairs, violations, satisfied, missing } = checkPrecedence(
+    state.rows,
+    activityRows,
+  );
+
+  if (violations > 0) {
+    banner.classList.add("bad");
+    banner.textContent =
+      `✗ ${violations} predecessor ordering violation(s) in the loaded schedule — ` +
+      `a successor starts before its predecessor finishes.`;
+  } else {
+    banner.classList.add("good");
+    banner.textContent =
+      `✓ All ${pairs.length} predecessor dependency(ies) satisfied` +
+      (missing ? ` (${missing} could not be checked — activity absent from result).` : ".");
+  }
+
+  const table = el("table", { class: "grid" });
+  table.appendChild(
+    el("thead", {}, el("tr", {}, [
+      el("th", {}, "Successor"),
+      el("th", {}, "Predecessor"),
+      el("th", { class: "num" }, "Pred. last wk"),
+      el("th", { class: "num" }, "Succ. first wk"),
+      el("th", {}, "Status"),
+    ])),
+  );
+  const tbody = el("tbody");
+  const LABEL = {
+    violation: "Violation",
+    ok: "OK",
+    na: "No access (n/a)",
+    unknown: "Not in result",
+  };
+  const PILL = { violation: "shortfall", ok: "ok", na: "slip", unknown: "breach" };
+  for (const p of pairs) {
+    tbody.appendChild(
+      el("tr", { class: p.status === "violation" ? "row-shortfall" : "" }, [
+        el("td", { class: "mono" }, p.successor),
+        el("td", { class: "mono" }, p.predecessor),
+        el("td", { class: "num" }, p.predLast == null ? "—" : String(p.predLast)),
+        el("td", { class: "num" }, p.succFirst == null ? "—" : String(p.succFirst)),
+        el("td", {}, el("span", { class: "pill " + PILL[p.status] }, LABEL[p.status])),
+      ]),
+    );
+  }
+  table.appendChild(tbody);
+  host.appendChild(table);
 }
 
 function utilBar(util) {
@@ -585,10 +661,10 @@ function utilBar(util) {
 }
 
 function setupPresolve() {
-  const wireDrop = (labelId, inputId, kind) => {
+  const wireDrop = (labelId, inputId, stateId, kind) => {
     const label = $("#" + labelId);
     const input = $("#" + inputId);
-    const stateSpan = $("#state-" + kind);
+    const stateSpan = $("#" + stateId);
 
     const handle = (file) => {
       if (!file) return;
@@ -618,8 +694,8 @@ function setupPresolve() {
     label.addEventListener("drop", (e) => handle(e.dataTransfer.files[0]));
   };
 
-  wireDrop("drop-activities", "input-activities", "activity");
-  wireDrop("drop-supply", "input-supply", "supply");
+  wireDrop("drop-activities", "input-activities", "state-activities", "activity");
+  wireDrop("drop-supply", "input-supply", "state-supply", "supply");
 
   $("#horizon-weeks").addEventListener("input", (e) => {
     const v = Number(e.target.value);

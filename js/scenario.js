@@ -228,7 +228,12 @@ export function evaluateScenario(accessRows, supplyRows, meta, opts) {
   for (const [id, m] of meta) {
     const planned = m.plannedWeek;
     if (planned == null) continue;
-    const finish = m.finishWeek != null ? m.finishWeek : lastWeekByActivity.get(id);
+    // Prefer the ACTUAL last scheduled week from the access rows being scored
+    // (this is the submission's source of truth, and lets what-if edits take
+    // effect). Fall back to meta.finishWeek only when the activity has no access
+    // rows in this submission.
+    const actualLast = lastWeekByActivity.get(id);
+    const finish = actualLast != null ? actualLast : m.finishWeek;
     if (finish == null) continue; // activity got no access -> no overrun measured here
     const overrunWeeks = Math.max(0, finish - planned);
     if (overrunWeeks <= 0) continue;
@@ -383,4 +388,182 @@ export function buildMeta({ activityRows = [], projectRows = [], scheduleRows = 
   }
 
   return meta;
+}
+
+
+// ---------- Reusable helpers for the enhanced UI ----------
+
+export const SCENARIOS = ["A", "B", "C"];
+export const SCENARIO_LABEL = {
+  A: "Strict supply",
+  B: "Strict schedule",
+  C: "Balanced",
+};
+
+// Evaluate all three scenarios at once against the same inputs.
+// Returns { A: result, B: result, C: result }.
+export function evaluateAllScenarios(accessRows, supplyRows, meta, opts = {}) {
+  const out = {};
+  for (const sc of SCENARIOS) {
+    out[sc] = evaluateScenario(accessRows, supplyRows, meta, { ...opts, scenario: sc });
+  }
+  return out;
+}
+
+// Flatten a single scenario result into a plain object suitable for JSON export.
+export function reportToObject(result, extra = {}) {
+  return {
+    ...extra,
+    scenario: result.scenario,
+    hardFail: result.hardFail,
+    tags: [...result.tags],
+    score: result.score,
+    breakdown: result.breakdown,
+    ecloNightsTotal: result.ecloNightsTotal,
+    totalExcessNights: result.totalExcessNights,
+    findings: result.findings,
+    capacityDetails: result.capacityDetails,
+    overrunDetails: result.overrunDetails,
+    continuityViolations: result.continuityViolations,
+    activityEcloCapViolations: result.activityEcloCapViolations,
+  };
+}
+
+// Serialize a scenario result (or all three) to a flat CSV summary string.
+// If given a map {A,B,C} it emits one row per scenario.
+export function reportToCsv(resultOrMap, submissionName = "submission") {
+  const results = SCENARIOS.every((s) => resultOrMap[s])
+    ? SCENARIOS.map((s) => resultOrMap[s])
+    : [resultOrMap];
+  const header = [
+    "submission",
+    "scenario",
+    "hard_fail",
+    "tags",
+    "score",
+    "overrun_score",
+    "excess_nights",
+    "excess_score",
+    "eclo_nights",
+    "eclo_score",
+  ];
+  const csvCell = (v) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [header.join(",")];
+  for (const r of results) {
+    const b = r.breakdown || {};
+    lines.push(
+      [
+        submissionName,
+        r.scenario,
+        r.hardFail ? "FAIL" : "PASS",
+        [...r.tags].join("|"),
+        r.score,
+        b.overrunScore ?? "",
+        b.excessNightsScored ?? b.excessNights ?? "",
+        b.excessScore ?? "",
+        b.ecloNights ?? r.ecloNightsTotal ?? "",
+        b.ecloScore ?? "",
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  return lines.join("\n") + "\n";
+}
+
+
+// ---------- Structural input validation ----------
+// Cross-checks the loaded files for problems that would make scoring misleading.
+// Returns { errors: [], warnings: [] } (errors = likely wrong; warnings = FYI).
+export function validateInputs({
+  accessRows = [],
+  activityRows = [],
+  supplyRows = [],
+  projectRows = [],
+  scheduleRows = [],
+} = {}) {
+  const errors = [];
+  const warnings = [];
+
+  const activityIds = new Set(activityRows.map((a) => a.activity));
+  const scheduleIds = new Set(scheduleRows.map((r) => r.activity_id));
+  const knownActivity = new Set([...activityIds, ...scheduleIds]);
+  const contracts = new Set(activityRows.map((a) => a.contract).filter(Boolean));
+  const projContracts = new Set(projectRows.map((p) => p.contract));
+  const supplyLocs = new Set(supplyRows.map((s) => s.location));
+
+  // Accesses referencing unknown activities
+  if (accessRows.length && knownActivity.size) {
+    const unknown = new Set();
+    for (const a of accessRows) if (!knownActivity.has(a.activity)) unknown.add(a.activity);
+    if (unknown.size)
+      warnings.push(
+        `${unknown.size} access(es) reference activities not found in the activity/schedule files (e.g. ${[...unknown].slice(0, 5).join(", ")}).`,
+      );
+  }
+
+  // Duplicate accesses (same activity + week appearing more than once)
+  const seen = new Map();
+  const dups = [];
+  for (const a of accessRows) {
+    const k = a.activity + "@@" + a.week;
+    if (seen.has(k)) dups.push(k);
+    else seen.set(k, true);
+  }
+  if (dups.length)
+    warnings.push(`${dups.length} duplicate access row(s) (same activity + week appears more than once).`);
+
+  // Activities whose contract has no project-details entry
+  if (projectRows.length && contracts.size) {
+    const missing = [...contracts].filter((c) => !projContracts.has(c));
+    if (missing.length)
+      warnings.push(
+        `${missing.length} contract(s) in the activity file have no 07_PROJECT_DETAILS entry (e.g. ${missing.slice(0, 5).join(", ")}) — priority/planned week may default.`,
+      );
+  }
+
+  // Activity locations with no supply entry
+  if (supplyRows.length && activityRows.length) {
+    const locs = new Set(activityRows.map((a) => a.location).filter(Boolean));
+    const missing = [...locs].filter((l) => !supplyLocs.has(l));
+    if (missing.length)
+      warnings.push(
+        `${missing.length} activity location(s) have no 04_LOCATION_SUPPLY entry (e.g. ${missing.slice(0, 5).join(", ")}) — capacity not checked there.`,
+      );
+  }
+
+  // Hard errors: no access rows at all
+  if (accessRows.length === 0) errors.push("No SCHEDULE_ACCESS rows loaded — nothing to score.");
+
+  return { errors, warnings };
+}
+
+// ---------- Per-location-week occupancy grid (for the capacity heatmap) ----------
+// Returns { locations:[...], weeks:[min..max], grid: Map(loc -> Map(week -> count)),
+//           capacityByLoc: Map, maxCount }.
+export function buildOccupancyGrid(accessRows, supplyRows, meta) {
+  const locOf = (id) => (meta.get(id) || {}).location || "(unknown)";
+  const grid = new Map();
+  let minWeek = Infinity;
+  let maxWeek = -Infinity;
+  let maxCount = 0;
+  for (const a of accessRows) {
+    const loc = locOf(a.activity);
+    if (!grid.has(loc)) grid.set(loc, new Map());
+    const wkMap = grid.get(loc);
+    const c = (wkMap.get(a.week) || 0) + 1;
+    wkMap.set(a.week, c);
+    if (c > maxCount) maxCount = c;
+    if (a.week < minWeek) minWeek = a.week;
+    if (a.week > maxWeek) maxWeek = a.week;
+  }
+  const capacityByLoc = new Map();
+  for (const s of supplyRows) capacityByLoc.set(s.location, s.capacity);
+  const weeks = [];
+  if (Number.isFinite(minWeek)) for (let w = minWeek; w <= maxWeek; w++) weeks.push(w);
+  const locations = [...grid.keys()].sort();
+  return { locations, weeks, grid, capacityByLoc, maxCount, minWeek, maxWeek };
 }

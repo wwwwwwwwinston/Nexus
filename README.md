@@ -25,25 +25,13 @@ and shows:
   `predecessor_activity_id` column and checks the loaded schedule result so
   that each predecessor's *last* granted week comes before its successor's
   *first* granted week, flagging any violation.
-- **Scenarios A/B/C** — validate and score a submission under any of the three
-  scoring regimes (see below). Load `SCHEDULE_ACCESS.csv` (per-access placement
-  with the `eclo` flag) plus the input files; the engine reports hard-fail tags
-  (`capacity` / `eclo` / `planned_date`) and the soft-score breakdown. Four
-  sub-views:
-  - **Single** — one scenario in depth: verdict, score cards, findings, and
-    clickable hard-fail tags that jump to the offending detail. Export the full
-    A/B/C report as **JSON or CSV**.
-  - **Compare A/B/C** — all three verdicts + scores side by side for the same
-    submission.
-  - **Charts** — a capacity heatmap (accesses per location-week, over-capacity
-    cells flagged), ECLO nights per line, and a score-contribution bar.
-  - **What-if** — move an access to a different week and watch the score /
-    hard-fails update live against the baseline.
-- **Batch** — drop several `SCHEDULE_ACCESS.csv` submissions and get a ranked
-  leaderboard (pass/fail + score per scenario); export it as CSV.
 - **Import data** — drop a CSV, pick a file, or paste CSV text to load a
   different solve result. Everything runs locally in the browser; nothing
   is uploaded.
+
+**A/B/C scenario scoring** is provided as a **command-line tool** (`score.mjs`),
+not a browser tab — see "Score from the command line" below. The underlying
+engine (`js/scenario.js`) is shared and covered by the test suite.
 
 The Overview toolbar also has an **Export CSV** button that downloads the
 currently filtered/sorted rows back to the schedule-result CSV format (it

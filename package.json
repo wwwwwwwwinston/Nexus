@@ -4,9 +4,13 @@
   "description": "Offline web UI for viewing, testing, and scoring trackopt track-possession schedules (Scenarios A/B/C).",
   "type": "module",
   "private": true,
+  "bin": {
+    "trackopt-score": "score.mjs"
+  },
   "scripts": {
     "test": "node tests/scenario.test.mjs",
-    "serve": "python3 -m http.server 8000"
+    "serve": "python3 -m http.server 8000",
+    "score": "node score.mjs"
   },
   "license": "MIT"
 }
